@@ -1,5 +1,7 @@
 module UniversalFeynRulesOutput
 
-greet() = print("Hello World!")
+include("constants.jl")
+include("objects.jl")
+include("utils.jl")
 
 end # module UniversalFeynRulesOutput
