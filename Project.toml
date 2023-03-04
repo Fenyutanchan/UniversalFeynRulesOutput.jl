@@ -1,0 +1,4 @@
+name = "UniversalFeynRulesOutput"
+uuid = "e2970b7e-a80f-4839-9fc1-2a0f2f4c4333"
+authors = ["Quan-feng WU <wuquanfeng@ihep.ac.cn>"]
+version = "0.1.0"
