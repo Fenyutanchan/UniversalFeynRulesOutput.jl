@@ -7,6 +7,12 @@ function read_model(model_path::String)
     all_particles   =   read_particles(model_path)
 
     all_coupling_orders =   read_coupling_orders(model_path)
+    all_couplings       =   read_couplings(model_path)
+
+    @show all_parameters
+    @show all_particles
+    @show all_coupling_orders
+    @show all_couplings
 end
 
 function check_model(model_path::String)::Vector{Bool}
@@ -24,6 +30,55 @@ function check_model(model_path::String)::Vector{Bool}
         file_name -> (isfile ∘ joinpath)(model_path, file_name),
         extra_model_files
     )
+end
+
+function read_couplings(model_path::String)::NamedTuple
+    file_path   =   joinpath(model_path, "couplings.py")
+    @assert isfile(file_path)
+
+    file_contents   =   readlines(file_path)
+    begin_line_indices  =   findall(
+        contains("Coupling("),
+        file_contents
+    )
+    end_line_indices    =   map(
+        begin_line_index -> findnext(endswith(')'), file_contents, begin_line_index),
+        begin_line_indices
+    )
+
+    text_list   =   String[]
+    for (begin_line_index, end_line_index) ∈ zip(begin_line_indices, end_line_indices)
+        text    =   join(file_contents[begin_line_index:end_line_index], "")
+        text    =   replace(text, ''' => '"')
+        
+        ori_str_range   =   findfirst(r"\{.+\}", text)
+        @assert !isnothing(ori_str_range)
+        ori_str         =   text[ori_str_range]
+
+        order_name_range_list   =   findall(r"\"\w+\"", ori_str)
+        order_order_range_list  =   findall(r":\d+", ori_str)
+        fin_str =   "Dict{String, Int}("
+        for (order_name_range, order_order_range) ∈ zip(order_name_range_list, order_order_range_list)
+            fin_str *=  ori_str[order_name_range] * " => " * ori_str[order_order_range][2:end]
+        end
+        fin_str *=  ")"
+
+        text    =   replace(text, ori_str => fin_str)
+
+        push!(text_list, text)
+    end
+
+    coupling_dict   =   Dict{Symbol, Coupling}()
+    for text ∈ text_list
+        expr    =   Meta.parse(text)
+        @assert expr.head == :(=)
+        @assert length(expr.args) == 2
+
+        eval(expr)  # Notice that this will evaluate the parameter at the module.
+        coupling_dict[first(expr.args)] =   eval(first(expr.args))
+    end
+    
+    return  NamedTuple(coupling_dict)
 end
 
 function read_coupling_orders(model_path::String)::NamedTuple

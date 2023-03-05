@@ -139,8 +139,26 @@ end
 
 struct Coupling
     name::String
-    value
-    order
+    value::Union{Expr, Symbol}
+    order::Dict{String, Int}
+
+    function Coupling(; kwargs...)
+        value   =   if isa(kwargs[:value], String)
+            value_str   =   replace(
+                kwargs[:value],
+                "**" => "^",
+                "cmath." => "",
+                "complexconjugate" => "conj",
+                ".*" => ". *"
+            )
+            Meta.parse(value_str)
+        else
+            @assert isa(kwargs[:value], Number)
+            kwargs[:value]
+        end
+        
+        return  new(kwargs[:name], value, kwargs[:order])
+    end
 end
 
 struct Lorentz
