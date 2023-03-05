@@ -1,4 +1,8 @@
 
+# None    =   nothing
+True    =   true
+False   =   false
+
 basic_model_files   =   [
     "particles.py",
     "couplings.py",
@@ -14,8 +18,6 @@ extra_model_files   =   [
     "propagators.py",
     "CT_vertices.py"
 ]
-
-None    =   nothing
 
 particle_default_optional_properties    =   Dict{Symbol, Any}(
     :propagating        =>  true,

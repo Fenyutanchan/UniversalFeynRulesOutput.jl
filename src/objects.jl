@@ -1,50 +1,4 @@
 
-struct Particle
-    pdg_code::Int
-    name::String
-    anti_name::String
-    spin::Int
-    color::Int
-    mass::Real
-    width::Real
-    tex_name::String
-    anti_tex_name::String
-    charge::Rational
-    optional_properties::Dict{Symbol, Any}
-    
-    Particle(
-        pdg_code::Int, name::String, anti_name::String,
-        spin::Integer, color::Integer, mass::Real, width::Real,
-        tex_name::String, anti_tex_name::String, charge::Real,
-        optional_properties::Dict{Symbol, Any}
-    )   =   new(
-        pdg_code, name, anti_name,
-        spin, color, mass, width,
-        tex_name, anti_tex_name, rationalize(charge),
-        optional_properties
-    )
-
-    function Particle(
-        pdg_code::Int, name::String, anti_name::String,
-        spin::Integer, color::Integer, mass::Real, width::Real,
-        tex_name::String, anti_tex_name::String, charge::Real;
-        kwargs...
-    )
-        optional_properties =   deepcopy(particle_default_optional_properties)
-        for key ∈ keys(kwargs)
-            optional_properties[key]    =   kwargs[key]
-        end
-        optional_properties[:line]  =   find_line_type(spin, color)
-
-        return new(
-            pdg_code, name, anti_name,
-            spin, color, mass, width,
-            tex_name, anti_tex_name, rationalize(charge),
-            optional_properties
-        )
-    end
-end
-
 struct Parameter{T<:Number}
     name::String
     nature::String
@@ -101,6 +55,77 @@ struct Parameter{T<:Number}
         else
             error("Type $(kwargs.type) is not supported.")
         end
+    end
+end
+
+struct Particle
+    pdg_code::Int
+    name::String
+    anti_name::String
+    spin::Int
+    color::Int
+    mass::Union{Real, Parameter{Real}, Symbol, Expr}
+    width::Union{Real, Parameter{Real}, Symbol, Expr}
+    tex_name::String
+    anti_tex_name::String
+    charge::Union{Integer, Rational}
+    optional_properties::Dict{Symbol, Any}
+    
+    Particle(
+        pdg_code::Int,
+        name::String,
+        anti_name::String,
+        spin::Int,
+        color::Int,
+        mass::Union{Real, Parameter{Real}, Symbol},
+        width::Union{Real, Parameter{Real}, Symbol},
+        tex_name::String,
+        anti_tex_name::String,
+        charge::Real,
+        optional_properties::Dict{Symbol, Any}
+    )   =   new(
+        pdg_code, name, anti_name,
+        spin, color, mass, width,
+        tex_name, anti_tex_name,
+        isa(charge, Integer) ? charge : rationalize(charge),
+        optional_properties
+    )
+
+    function Particle(; kwargs...)
+        required_args   =   [
+            :pdg_code, :name, :antiname,
+            :spin, :color, :mass, :width,
+            :texname, :antitexname, :charge
+        ]
+        optional_properties =   Dict{Symbol, Any}(
+            :propagating        =>  true,
+            :counter_term       =>  nothing,
+            :GoldstoneBoson     =>  false, 
+            :propagator         =>  nothing
+        )
+        for key ∈ setdiff(keys(kwargs), keys(required_args))
+            optional_properties[key]    =   kwargs[key]
+        end
+
+        charge  =   isa(kwargs[:charge], Integer) ? kwargs[:charge] : rationalize(kwargs[:charge])
+
+        optional_properties[:line]  =   find_line_type(
+            kwargs[:spin], kwargs[:color];
+            self_conjugate_flag=(kwargs[:name]==kwargs[:antiname])
+        )
+        new(
+            kwargs[:pdg_code],
+            kwargs[:name],
+            kwargs[:antiname],
+            kwargs[:spin],
+            kwargs[:color],
+            kwargs[:mass],
+            kwargs[:width],
+            kwargs[:texname],
+            kwargs[:antitexname],
+            charge,
+            optional_properties
+        )
     end
 end
 

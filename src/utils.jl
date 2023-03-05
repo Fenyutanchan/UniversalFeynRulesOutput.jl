@@ -39,11 +39,11 @@ function anti(p::Particle)::Particle
     )
 end
 
-function find_line_type(spin::Integer, color::Integer)::String
+function find_line_type(spin::Integer, color::Integer; self_conjugate_flag::Bool=false)::String
     if spin == 1
         return  "dashed"
     elseif spin == 2
-        if !is_self_conjugate(p)
+        if !self_conjugate_flag
             return  "straight"
         elseif color == 1
             return  "swavy"
@@ -65,7 +65,13 @@ function find_line_type(spin::Integer, color::Integer)::String
     end
 end
 
-is_goldstone_boson(p::Particle)   =   p.optional_properties.goldstone_boson
-is_self_conjugate(p::Particle)    =   p.name == p.antiname
+is_goldstone_boson(p::Particle) =   p.optional_properties.goldstone_boson
+is_self_conjugate(p::Particle)  =   p.name == p.antiname
 
-
+Base.zero(::Type{Parameter})    =   Parameter(
+    name    =   "ZERO",
+    nature  =   "internal",
+    type    =   "real",
+    value   =   "0.0",
+    texname =   "0"
+)
