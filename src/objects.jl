@@ -155,14 +155,17 @@ struct Lorentz
 end
 
 struct CouplingOrder
-    expansion_order
-    hierarchy
-    perturbative_expansion
+    name::String
+    expansion_order::Integer
+    hierarchy::Integer
+    perturbative_expansion::Integer
 
-    CouplingOrder(
-        expansion_order, hierarchy;
-        perturbative_expansion::Integer=0
-    )   =   new(expansion_order, hierarchy, perturbative_expansion)
+    CouplingOrder(;perturbation_expansion::Integer=0, kwargs...)    =   new(
+        kwargs[:name],
+        kwargs[:expansion_order],
+        kwargs[:hierarchy],
+        perturbation_expansion
+    )
 end
 
 struct Decay

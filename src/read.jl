@@ -5,6 +5,8 @@ function read_model(model_path::String)
 
     all_parameters  =   read_parameters(model_path)
     all_particles   =   read_particles(model_path)
+
+    all_coupling_orders =   read_coupling_orders(model_path)
 end
 
 function check_model(model_path::String)::Vector{Bool}
@@ -22,6 +24,40 @@ function check_model(model_path::String)::Vector{Bool}
         file_name -> (isfile ∘ joinpath)(model_path, file_name),
         extra_model_files
     )
+end
+
+function read_coupling_orders(model_path::String)::NamedTuple
+    file_path   =   joinpath(model_path, "coupling_orders.py")
+    @assert isfile(file_path)
+
+    file_contents   =   readlines(file_path)
+    begin_line_indices  =   findall(
+        contains("CouplingOrder("),
+        file_contents
+    )
+    end_line_indices    =   map(
+        begin_line_index -> findnext(endswith(')'), file_contents, begin_line_index),
+        begin_line_indices
+    )
+
+    text_list   =   String[]
+    for (begin_line_index, end_line_index) ∈ zip(begin_line_indices, end_line_indices)
+        text    =   join(file_contents[begin_line_index:end_line_index], "")
+        text    =   replace(text, ''' => '"')
+        push!(text_list, text)
+    end
+
+    coupling_order_dict =   Dict{Symbol, CouplingOrder}()
+    for text ∈ text_list
+        expr    =   Meta.parse(text)
+        @assert expr.head == :(=)
+        @assert length(expr.args) == 2
+
+        eval(expr)  # Notice that this will evaluate the coupling order at the module.
+        coupling_order_dict[first(expr.args)]   =   eval(first(expr.args))
+    end
+
+    return  NamedTuple(coupling_order_dict)
 end
 
 function read_parameters(model_path::String)::NamedTuple
@@ -51,7 +87,8 @@ function read_parameters(model_path::String)::NamedTuple
         @assert expr.head == :(=)
         @assert length(expr.args) == 2
 
-        param_dict[first(expr.args)]    =   eval(last(expr.args))
+        eval(expr)  # Notice that this will evaluate the parameter at the module.
+        param_dict[first(expr.args)]    =   eval(first(expr.args))
     end
     
     return  NamedTuple(param_dict)
@@ -83,7 +120,7 @@ function read_particles(model_path::String)::NamedTuple
                 break
             end
 
-            text    =   replace(text, text[match_range] => ":(all_parameters." * text[match_range][7:end-1] * "),")
+            text    =   replace(text, text[match_range] => text[match_range][7:end-1] * ",")
         end
         push!(text_list, text)
     end
