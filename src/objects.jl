@@ -45,28 +45,62 @@ struct Particle
     end
 end
 
-struct Parameter
+struct Parameter{T<:Number}
     name::String
-    nature
-    type
-    value
+    nature::String
+    value::Union{T, Expr, Symbol}
     tex_name::String
-    lhablock
-    lhacode
+    lhablock::Union{String, Missing}
+    lhacode::Union{Integer, Missing}
 
-    function Parameter(
-        name::String, nature, type, value, tex_name::String,
-        lhablock, lhacode
-    )
-        if nature == "external" && (
-            isnothing(lhablock) || isnothing(lhacode)
+    function Parameter(; kwargs...)
+        if kwargs[:nature] == "external" && (
+            !haskey(kwargs, :lhablock) || !haskey(kwargs, :lhacode)
         )
-            error("Need LHA information for external parameter $name.")
+            error("Need LHA information for external parameter $(kwargs.name).")
         end
-        return new(
-            name, nature, type, value, tex_name,
-            lhablock, lhacode
-        )
+
+        lhablock    =   haskey(kwargs, :lhablock) ? kwargs[:lhablock] : missing
+        lhacode     =   if haskey(kwargs, :lhacode)
+            @assert length(kwargs[:lhacode]) == 1
+            first(kwargs[:lhacode])
+        else
+            missing
+        end
+
+        value       =   if isa(kwargs[:value], String)
+            value_str   =   replace(
+                kwargs[:value],
+                "**" => "^",
+                "cmath." => "",
+                "complexconjugate" => "conj",
+                ".*" => ". *"
+            )
+            Meta.parse(value_str)
+        else
+            @assert isa(kwargs[:value], Number)
+            kwargs[:value]
+        end
+
+        if kwargs[:type]  ==  "real"
+            return  new{Real}(
+                kwargs[:name], kwargs[:nature], value,
+                kwargs[:texname], lhablock, lhacode
+            )
+        elseif kwargs[:type]    ==  "complex"
+            if isa(value, Real)
+                return  new{Complex}(
+                    kwargs[:name], kwargs[:nature], complex(value),
+                    kwargs[:texname], lhablock, lhacode
+                )
+            end
+            return  new{Complex}(
+                kwargs[:name], kwargs[:nature], value,
+                kwargs[:texname], lhablock, lhacode
+            )
+        else
+            error("Type $(kwargs.type) is not supported.")
+        end
     end
 end
 
