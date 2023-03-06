@@ -2,3 +2,6 @@ name = "UniversalFeynRulesOutput"
 uuid = "e2970b7e-a80f-4839-9fc1-2a0f2f4c4333"
 authors = ["Quan-feng WU <wuquanfeng@ihep.ac.cn>"]
 version = "0.1.0"
+
+[deps]
+Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"

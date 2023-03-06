@@ -1,3 +1,18 @@
+module  Objects
+
+export  Parameter
+export  Particle
+export  Coupling
+export  Lorentz
+export  Vertex
+export  CouplingOrder
+export  Decay
+export  FormFactor
+
+export  anti
+export  is_goldstone_boson
+export  is_self_conjugate
+export  is
 
 struct Parameter{T<:Number}
     name::String
@@ -22,32 +37,34 @@ struct Parameter{T<:Number}
             missing
         end
 
-        value       =   if isa(kwargs[:value], String)
-            value_str   =   replace(
-                kwargs[:value],
-                "**" => "^",
-                "cmath." => "",
-                "complexconjugate" => "conj",
-                ".*" => ". *"
-            )
-            Meta.parse(value_str)
+        value   =   if isa(kwargs[:value], String)
+            tmp =   Meta.parse(kwargs[:value])
+            if isa(tmp, Real) && kwargs[:type] == "complex"
+                complex(tmp)
+            else
+                tmp
+            end
         else
             @assert isa(kwargs[:value], Number)
-            kwargs[:value]
+            if isa(kwargs[:value], Real) && kwargs[:type] == "complex"
+                complex(kwargs[:value])
+            else
+                kwargs[:value]
+            end
         end
 
-        if kwargs[:type]  ==  "real"
+        if kwargs[:type] == "real"
             return  new{Real}(
                 kwargs[:name], kwargs[:nature], value,
                 kwargs[:texname], lhablock, lhacode
             )
-        elseif kwargs[:type]    ==  "complex"
-            if isa(value, Real)
-                return  new{Complex}(
-                    kwargs[:name], kwargs[:nature], complex(value),
-                    kwargs[:texname], lhablock, lhacode
-                )
-            end
+        elseif kwargs[:type] == "complex"
+            # if isa(value, Real)
+            #     return  new{Complex}(
+            #         kwargs[:name], kwargs[:nature], complex(value),
+            #         kwargs[:texname], lhablock, lhacode
+            #     )
+            # end
             return  new{Complex}(
                 kwargs[:name], kwargs[:nature], value,
                 kwargs[:texname], lhablock, lhacode
@@ -87,7 +104,7 @@ struct Particle
         pdg_code, name, anti_name,
         spin, color, mass, width,
         tex_name, anti_tex_name,
-        isa(charge, Integer) ? charge : rationalize(charge),
+        isa(charge, AbstractFloat) ? rationalize(charge) : charge,
         optional_properties
     )
 
@@ -99,11 +116,10 @@ struct Particle
         ]
         optional_properties =   Dict{Symbol, Any}(
             :propagating        =>  true,
-            :counter_term       =>  nothing,
             :GoldstoneBoson     =>  false, 
             :propagator         =>  nothing
         )
-        for key ∈ setdiff(keys(kwargs), keys(required_args))
+        for key ∈ setdiff(keys(kwargs), required_args)
             optional_properties[key]    =   kwargs[key]
         end
 
@@ -127,14 +143,6 @@ struct Particle
             optional_properties
         )
     end
-end
-
-struct Vertex
-    name::String
-    particles::Vector{Particle}
-    color::Integer
-    lorentz
-    couplings
 end
 
 struct Coupling
@@ -163,13 +171,20 @@ end
 
 struct Lorentz
     name::String
-    spins
-    structure
+    spins::Vector{Integer}
+    structure::String
 
-    Lorentz(
-        name::String, spins;
-        structure::String="external"
-    )   =   new(name, spins, structure)
+    Lorentz(; structure="exteranl", kwargs...)  =   new(kwargs[:name], kwargs[:spins], structure)
+end
+
+struct Vertex
+    name::String
+    particles::Vector{Particle}
+    color::Vector{String}
+    lorentz::Vector{Lorentz}
+    couplings::Dict{Tuple, Coupling}
+
+    Vertex(; kwargs...) =   new(kwargs[:name], kwargs[:particles], kwargs[:color], kwargs[:lorentz], kwargs[:couplings])
 end
 
 struct CouplingOrder
@@ -187,12 +202,89 @@ struct CouplingOrder
 end
 
 struct Decay
-    particle
-    particle_widths
+    name::String
+    particle::Particle
+    particle_widths::Dict{Tuple, String}
+
+    Decay(; kwargs...)  =   new(kwargs[:name], kwargs[:particle], kwargs[:partial_widths])
 end
 
 struct FormFactor
     name::String
     type
     value
+end
+
+function anti(p::Particle)::Particle
+    if is_self_conjugate(p)
+        return  p
+    end
+
+    fixed_properties    =   [:line, :propagating, :GoldstoneBoson, :propagator]
+
+    anti_properties =   Dict{Symbol, Any}()
+    for key ∈ fixed_properties
+        anti_properties[key]    =   p.optional_properties[key]
+    end
+
+    to_be_flipped_property_names    =   setdiff(
+        keys(p.optional_properties),
+        fixed_properties
+    )
+    for property_name ∈ to_be_flipped_property_names
+        anti_properties[property_name] =   - p.optional_properties[property_name]
+    end
+    new_color   =   (p.color ∈ [1, 8]) ? p.color : -p.color
+    return  Particle(
+        -p.pdg_code,
+        p.anti_name,
+        p.name,
+        p.spin,
+        new_color,
+        p.mass,
+        p.width,
+        p.anti_tex_name,
+        p.tex_name,
+        -p.charge,
+        anti_properties
+    )
+end
+
+function find_line_type(spin::Integer, color::Integer; self_conjugate_flag::Bool=false)::String
+    if spin == 1
+        return  "dashed"
+    elseif spin == 2
+        if !self_conjugate_flag
+            return  "straight"
+        elseif color == 1
+            return  "swavy"
+        else
+            return  "scurly"
+        end
+    elseif spin == 3
+        if color == 1
+            return "wavy"
+        else
+            return  "curly"
+        end
+    elseif spin == 5
+        return  "double"
+    elseif spin == -1
+        return  "dotted"
+    else
+        return  "dashed"    # not supported
+    end
+end
+
+is_goldstone_boson(p::Particle) =   p.optional_properties.GoldstoneBoson
+is_self_conjugate(p::Particle)  =   p.name == p.anti_name
+
+Base.zero(::Type{Parameter})    =   Parameter(
+    name    =   "ZERO",
+    nature  =   "internal",
+    type    =   "real",
+    value   =   "0.0",
+    texname =   "0"
+)
+
 end

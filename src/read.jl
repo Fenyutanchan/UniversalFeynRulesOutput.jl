@@ -1,21 +1,21 @@
 
-function read_model(model_path::String)
-    extra_file_flags    =   check_model(model_path)
-    model_name          =   (Symbol ∘ last ∘ splitdir)(model_path)
+basic_model_files   =   [
+    "particles.py",
+    "couplings.py",
+    "lorentz.py",
+    "parameters.py",
+    "vertices.py",
+    "coupling_orders.py",
+]
 
-    all_parameters  =   read_parameters(model_path)
-    all_particles   =   read_particles(model_path)
+extra_model_files   =   [
+    "decays.py",
+    "form_factors.py",
+    "propagators.py",
+    "CT_vertices.py"
+]
 
-    all_coupling_orders =   read_coupling_orders(model_path)
-    all_couplings       =   read_couplings(model_path)
-
-    @show all_parameters
-    @show all_particles
-    @show all_coupling_orders
-    @show all_couplings
-end
-
-function check_model(model_path::String)::Vector{Bool}
+function check_model(model_path::String)
     @assert isdir(model_path)
     
     @assert all(
@@ -25,14 +25,16 @@ function check_model(model_path::String)::Vector{Bool}
             basic_model_files
         )
     )
-
-    return  map(
-        file_name -> (isfile ∘ joinpath)(model_path, file_name),
-        extra_model_files
-    )
 end
 
-function read_couplings(model_path::String)::NamedTuple
+function read_CT_vertices(model_path::String)::Vector{String}
+    file_path   =   joinpath(model_path, "CT_vertices.py")
+    if !isfile(file_path)
+        return  String[]
+    end
+end
+
+function read_couplings(model_path::String)::Vector{String}
     file_path   =   joinpath(model_path, "couplings.py")
     @assert isfile(file_path)
 
@@ -46,10 +48,17 @@ function read_couplings(model_path::String)::NamedTuple
         begin_line_indices
     )
 
-    text_list   =   String[]
+    coupling_str_list   =   String[]
     for (begin_line_index, end_line_index) ∈ zip(begin_line_indices, end_line_indices)
         text    =   join(file_contents[begin_line_index:end_line_index], "")
         text    =   replace(text, ''' => '"')
+
+        text    =   replace(text,
+            "**" => "^",
+            "cmath." => "",
+            "complexconjugate" => "conj",
+            ".*" => ". *"
+        )
         
         ori_str_range   =   findfirst(r"\{.+\}", text)
         @assert !isnothing(ori_str_range)
@@ -57,31 +66,22 @@ function read_couplings(model_path::String)::NamedTuple
 
         order_name_range_list   =   findall(r"\"\w+\"", ori_str)
         order_order_range_list  =   findall(r":\d+", ori_str)
-        fin_str =   "Dict{String, Int}("
-        for (order_name_range, order_order_range) ∈ zip(order_name_range_list, order_order_range_list)
-            fin_str *=  ori_str[order_name_range] * " => " * ori_str[order_order_range][2:end]
-        end
-        fin_str *=  ")"
+        fin_str =   "Dict{String, Int}(" * join(
+            [
+                ori_str[order_name_range] * " => " * ori_str[order_order_range][2:end]
+                for (order_name_range, order_order_range) ∈ zip(order_name_range_list, order_order_range_list)
+            ], ", "
+        ) * ")"
 
         text    =   replace(text, ori_str => fin_str)
 
-        push!(text_list, text)
+        push!(coupling_str_list, (string ∘ Meta.parse)(text))
     end
 
-    coupling_dict   =   Dict{Symbol, Coupling}()
-    for text ∈ text_list
-        expr    =   Meta.parse(text)
-        @assert expr.head == :(=)
-        @assert length(expr.args) == 2
-
-        eval(expr)  # Notice that this will evaluate the parameter at the module.
-        coupling_dict[first(expr.args)] =   eval(first(expr.args))
-    end
-    
-    return  NamedTuple(coupling_dict)
+    return  coupling_str_list
 end
 
-function read_coupling_orders(model_path::String)::NamedTuple
+function read_coupling_orders(model_path::String)::Vector{String}
     file_path   =   joinpath(model_path, "coupling_orders.py")
     @assert isfile(file_path)
 
@@ -95,27 +95,119 @@ function read_coupling_orders(model_path::String)::NamedTuple
         begin_line_indices
     )
 
-    text_list   =   String[]
+    coupling_order_str_list =   String[]
     for (begin_line_index, end_line_index) ∈ zip(begin_line_indices, end_line_indices)
         text    =   join(file_contents[begin_line_index:end_line_index], "")
         text    =   replace(text, ''' => '"')
-        push!(text_list, text)
+        push!(coupling_order_str_list, (string ∘ Meta.parse)(text))
     end
 
-    coupling_order_dict =   Dict{Symbol, CouplingOrder}()
-    for text ∈ text_list
-        expr    =   Meta.parse(text)
-        @assert expr.head == :(=)
-        @assert length(expr.args) == 2
-
-        eval(expr)  # Notice that this will evaluate the coupling order at the module.
-        coupling_order_dict[first(expr.args)]   =   eval(first(expr.args))
-    end
-
-    return  NamedTuple(coupling_order_dict)
+    return  coupling_order_str_list
 end
 
-function read_parameters(model_path::String)::NamedTuple
+function read_decays(model_path::String)::Vector{String}
+    file_path   =   joinpath(model_path, "decays.py")
+    if !isfile(file_path)
+        return  String[]
+    end
+
+    file_contents   =   readlines(file_path)
+    begin_line_indices  =   findall(
+        contains("Decay("),
+        file_contents
+    )
+    end_line_indices    =   map(
+        begin_line_index -> findnext(endswith(')'), file_contents, begin_line_index),
+        begin_line_indices
+    )
+
+    decay_str_list  =   String[]
+    for (begin_line_index, end_line_index) ∈ zip(begin_line_indices, end_line_indices)
+        text    =   join(file_contents[begin_line_index:end_line_index], "")
+
+        text    =   replace(text, ''' => '"')
+        text    =   replace(text,
+            "P." => "Particles.",
+        )
+
+        text    =   replace(text,
+            "{" => "Dict{Tuple, String}(",
+            ":" => "=>",
+            "}" => ")"
+        )
+
+        text    =   replace(text,
+            "**" => "^",
+            "cmath." => "",
+            "complexconjugate" => "conj",
+            ".*" => ". *"
+        )
+
+        push!(decay_str_list, (string ∘ Meta.parse)(text))
+    end
+
+    pushfirst!(decay_str_list, "import  ..Particles\n\n")
+    return  decay_str_list
+end
+
+function read_form_factors(model_path::String)::Vector{String}
+    file_path   =   joinpath(model_path, "form_factors.py")
+    if !isfile(file_path)
+        return  String[]
+    end
+end
+
+function read_lorentz(model_path::String)::Vector{String}
+    file_path   =   joinpath(model_path, "lorentz.py")
+    @assert isfile(file_path)
+
+    file_contents   =   readlines(file_path)
+    begin_line_indices  =   findall(
+        contains("Lorentz("),
+        file_contents
+    )
+    end_line_indices    =   map(
+        begin_line_index -> findnext(endswith(')'), file_contents, begin_line_index),
+        begin_line_indices
+    )
+    
+    lorentz_str_list    =   String[]
+    for (begin_line_index, end_line_index) ∈ zip(begin_line_indices, end_line_indices)
+        text    =   join(file_contents[begin_line_index:end_line_index], "")
+        text    =   replace(text, ''' => '"')
+        text    =   replace(text, "ForFac" => "FormFactors")
+        text    =   replace(text,
+            "**" => "^",
+            "cmath." => "",
+            "complexconjugate" => "conj",
+            ".*" => ". *"
+        )
+        push!(lorentz_str_list, (string ∘ Meta.parse)(text))
+    end
+    
+    pushfirst!(lorentz_str_list, "import  ..FormFactors\n\n")
+    return  lorentz_str_list
+end
+
+function read_model(model_path::String)::Dict{String, Vector{String}}
+    check_model(model_path)
+
+    return  Dict{String, Union{String, Vector{String}}}(
+        "particles"         =>  read_particles(model_path),
+        "couplings"         =>  read_couplings(model_path),
+        "lorentz"           =>  read_lorentz(model_path),
+        "parameters"        =>  read_parameters(model_path),
+        "vertices"          =>  read_vertices(model_path),
+        "coupling_orders"   =>  read_coupling_orders(model_path),
+
+        "decays"            =>  read_decays(model_path),
+        "form_factors"      =>  read_form_factors(model_path),
+        "propagators"       =>  read_propagators(model_path),
+        "CT_vertices"       =>  read_CT_vertices(model_path)
+    )
+end
+
+function read_parameters(model_path::String)::Vector{String}
     file_path   =   joinpath(model_path, "parameters.py")
     @assert isfile(file_path)
 
@@ -129,33 +221,29 @@ function read_parameters(model_path::String)::NamedTuple
         begin_line_indices
     )
     
-    text_list   =   String[]
+    parameter_str_list  =   String[]
     for (begin_line_index, end_line_index) ∈ zip(begin_line_indices, end_line_indices)
         text    =   join(file_contents[begin_line_index:end_line_index], "")
         text    =   replace(text, ''' => '"')
-        push!(text_list, text)
+        text    =   replace(text,
+            "**" => "^",
+            "cmath." => "",
+            "complexconjugate" => "conj",
+            ".*" => ". *"
+        )
+        push!(parameter_str_list, (string ∘ Meta.parse)(text))
     end
 
-    param_dict  =   Dict{Symbol, Parameter}()
-    for text ∈ text_list
-        expr    =   Meta.parse(text)
-        @assert expr.head == :(=)
-        @assert length(expr.args) == 2
-
-        eval(expr)  # Notice that this will evaluate the parameter at the module.
-        param_dict[first(expr.args)]    =   eval(first(expr.args))
-    end
-    
-    return  NamedTuple(param_dict)
+    return  parameter_str_list
 end
 
-function read_particles(model_path::String)::NamedTuple
+function read_particles(model_path::String)::Vector{String}
     file_path   =   joinpath(model_path, "particles.py")
     @assert isfile(file_path)
 
     file_contents   =   readlines(file_path)
     begin_line_indices  =   findall(
-        contains("Particle("),
+        line -> contains(line, "Particle(") || contains(line, ".anti()"),
         file_contents
     )
     end_line_indices    =   map(
@@ -163,37 +251,79 @@ function read_particles(model_path::String)::NamedTuple
         begin_line_indices
     )
     
-    text_list   =   String[]
+    particle_str_list   =   String[]
     for (begin_line_index, end_line_index) ∈ zip(begin_line_indices, end_line_indices)
         text    =   join(file_contents[begin_line_index:end_line_index], "")
 
-        text    =   replace(text, '''     =>  '"')
+        text    =   replace(text, ''' => '"')
+        text    =   replace(text, "True" => "true", "False" => "false")
+        text    =   replace(text, "Param." => "Parameters.")
 
-        while true
-            match_range =   findfirst(r"Param.\w+,", text)
-            if isnothing(match_range)
-                break
-            end
-
-            text    =   replace(text, text[match_range] => text[match_range][7:end-1] * ",")
-        end
-        push!(text_list, text)
-    end
-
-    part_dict   =   Dict{Symbol, Particle}()
-    for text ∈ text_list
-        expr    =   Meta.parse(text)
-        @assert expr.head == :(=)
-        @assert length(expr.args) == 2
-        
-        anti_expr_range =   findfirst(r"\w+.anti\(\)", text)
-        if !isnothing(anti_expr_range)
-            part_dict[first(expr.args)] =   anti(part_dict[Symbol(text[anti_expr_range][begin:end-7])])
-            continue
+        anti_range  =   findfirst(r"\w+.anti\(\)", text)
+        if !isnothing(anti_range)
+            anti_text   =   text[anti_range]
+            text    =   replace(text,
+                anti_text => "anti(" * (first ∘ splitext)(anti_text) * ")"
+            )
         end
 
-        part_dict[first(expr.args)] =   eval(last(expr.args))
+        push!(particle_str_list, (string ∘ Meta.parse)(text))
     end
-    
-    return  NamedTuple(part_dict)
+
+    pushfirst!(particle_str_list, "import  ..Parameters\n\n")
+    return  particle_str_list
+end
+
+function read_propagators(model_path::String)::Vector{String}
+    file_path   =   joinpath(model_path, "propagators.py")
+    if !isfile(file_path)
+        return  String[]
+    end
+end
+
+function read_vertices(model_path::String)::Vector{String}
+    file_path   =   joinpath(model_path, "vertices.py")
+    @assert isfile(file_path)
+
+    file_contents   =   readlines(file_path)
+    begin_line_indices  =   findall(
+        contains("Vertex("),
+        file_contents
+    )
+    end_line_indices    =   map(
+        begin_line_index -> findnext(endswith(')'), file_contents, begin_line_index),
+        begin_line_indices
+    )
+
+    vertex_str_list =   String[]
+    for (begin_line_index, end_line_index) ∈ zip(begin_line_indices, end_line_indices)
+        text    =   join(file_contents[begin_line_index:end_line_index], "")
+
+        text    =   replace(text, ''' => '"')
+        text    =   replace(text,
+            "P." => "Particles.",
+            "L." => "LorentzIndices.",
+            "C." => "Couplings."
+        )
+
+        ori_str_range   =   findfirst(r"\{.+\}", text)
+        @assert !isnothing(ori_str_range)
+        ori_str         =   text[ori_str_range]
+
+        spin_color_pair_range_list  =   findall(r"\(\d+,\d+\)", ori_str)
+        coupling_range_list         =   findall(r"Couplings.\w+", ori_str)
+        fin_str =   "Dict{Tuple{Int, Int}, Coupling}(" * join(
+            [
+                ori_str[spin_color_pair_range] * " => " * ori_str[coupling_range]
+                for (spin_color_pair_range, coupling_range) ∈ zip(spin_color_pair_range_list, coupling_range_list)
+            ], ", "
+        ) * ")"
+
+        text    =   replace(text, ori_str => fin_str)
+
+        push!(vertex_str_list, (string ∘ Meta.parse)(text))
+    end
+
+    pushfirst!(vertex_str_list, "import  ..Particles\nimport  ..Couplings\nimport  ..LorentzIndices\n\n")
+    return  vertex_str_list
 end
