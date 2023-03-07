@@ -1,1 +1,1 @@
-test/**.py linguist-detectable=false
+test/*/*.py linguist-detectable=false

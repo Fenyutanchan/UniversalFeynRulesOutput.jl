@@ -12,7 +12,6 @@ export  FormFactor
 export  anti
 export  is_goldstone_boson
 export  is_self_conjugate
-export  is
 
 struct Parameter{T<:Number}
     name::String
@@ -287,4 +286,4 @@ Base.zero(::Type{Parameter})    =   Parameter(
     texname =   "0"
 )
 
-end
+end # module Objects
